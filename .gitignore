@@ -9,6 +9,7 @@ __pycache__/
 # dados regeneráveis (rodar chain_ingest pra recriar)
 data/
 models/scan/
+models/backtest/
 
 # logs locais
 models/logs/

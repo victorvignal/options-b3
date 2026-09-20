@@ -107,7 +107,7 @@ def get_expirations(underlying: str, token: str) -> list[str]:
 
 def get_chain(underlying: str, expiration: str, token: str) -> list[dict]:
     """
-    Chain completa de um vencimento.
+    Chain completa de um vencimento (último pregão disponível).
     Retorna lista de dicts com todos os campos brapi por série.
     """
     data = _get(
@@ -115,6 +115,43 @@ def get_chain(underlying: str, expiration: str, token: str) -> list[dict]:
         token,
     )
     return data.get("series", [])
+
+
+def fetch_chain_at_date(underlying: str, expiration: str, date_str: str,
+                        token: str) -> list[dict]:
+    """
+    Chain histórica: retorna o snapshot de uma data específica (YYYY-MM-DD).
+    Útil pra backtest OOS — sem isso, brapi só dá o último pregão.
+
+    Verificado empiricamente: o parâmetro ?date= é respeitado, e o `date`
+    de cada série bate com o dia pedido. Símbolos que não existiam naquela
+    data simplesmente somem do payload (brapi não retorna histórico de
+    symbols reusados, mas mantém continuidade por strike+side+vencimento).
+    """
+    url = (
+        f"{BRAPI_BASE}/options/chain"
+        f"?underlying={underlying}&expirationDate={expiration}&date={date_str}"
+    )
+    data = _get(url, token)
+    return data.get("series", [])
+
+
+def fetch_analytics_at_date(underlying: str, expiration: str, date_str: str,
+                            token: str) -> list[dict]:
+    """
+    Analytics histórica (IV + gregas pré-calculadas pela brapi) por data.
+    Útil como 'verdade' pra backtest — evita recalcular IV via Newton.
+
+    Retorna lista com impliedVolatility/delta/gamma/theta/vega/rho por série.
+    Series com confidence='none' e impliedVolatility=null (ex: ITM profundo
+    com último trade >5 dias) devem ser descartadas.
+    """
+    url = (
+        f"{BRAPI_BASE}/options/analytics"
+        f"?underlying={underlying}&expirationDate={expiration}&date={date_str}"
+    )
+    data = _get(url, token)
+    return data.get("analytics", [])
 
 
 def filter_european(series: list[dict]) -> list[dict]:

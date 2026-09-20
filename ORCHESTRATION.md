@@ -70,7 +70,30 @@ Sandbox: PETR4 funciona sem token pra validar pipeline.
 - nota: brapi atualiza 1x/dia às 19h BRT (EOD). Refresh de 15s só é útil
   durante os primeiros minutos após atualização, ou via botão manual.
 
-## F6: Backtest honesto [status: pending]
+## F6: Backtest honesto [status: complete] [started: 2026-09-20]
+- src/backtest.py: walk-forward OOS
+  - Para cada dia D na janela (últimos 30 pregões):
+    1. Calibra SVI com chain + analytics brapi de D-1
+    2. Prevê IV surface em D interpolando pela SVI calibrada
+    3. Compara com /options/analytics?date=D (verdade)
+  - Filtro moneyness 0.85-1.15 (asas têm extrapolação ruim)
+  - Baseline: "IV_amanhã = IV_hoje" (random walk em IV)
+- endpoints novos: /options/chain?date=, /options/analytics?date= (Pro, verificado)
+- resultado PETR4 vencimento 2026-10-16, 24 pregões, 1218 obs:
+  - RMSE modelo (SVI):  3.82 pp
+  - RMSE baseline (RW): 4.23 pp  (modelo +0.41pp melhor)
+  - MAE  modelo:        2.28 pp
+  - MAE  baseline:      2.34 pp  (modelo +0.06pp melhor)
+  - hit-rate:           45.0%    (baseline ganha em 55% das séries individuais)
+- output: models/backtest/{underlying}_{exp}.csv (ignorado pelo git, regenerável)
+- dashboard tab "Backtest OOS" com métricas + RMSE por dia + scatter pred vs real
+- comando: `python -m src.backtest` (~30-60s pros 30 pregões)
+- conclusão: SVI bate baseline trivial na MÉDIA (RMSE/MAE), mas perde em
+  contagem de séries individuais. Edge líquido pequeno. Não é motivo pra
+  operar com convicção — investigar outras parametrizações (eSSVI) ou filtros
+  por bid-ask spread antes de tentar live.
 
 ## Próximo passo
-F1 → F2 (chain ingest real)
+- (opcional) expandir pra BBAS3 + VALE3 vencimentos mensais
+- (opcional) experimentar eSSVI (parametrização mais robusta em asas)
+- (opcional) filtro por spread < X% pra excluir séries com ruído de bid/ask
