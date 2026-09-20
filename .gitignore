@@ -1,0 +1,22 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# secrets — nunca commitar
+.env
+
+# dados regeneráveis (rodar chain_ingest pra recriar)
+data/
+models/scan/
+
+# logs locais
+models/logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/

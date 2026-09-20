@@ -1,0 +1,22 @@
+# requirements pra rodar options-b3 localmente
+#
+# Setup:
+#   1. python -m venv venv && source venv/bin/activate
+#      (Windows: venv\Scripts\activate)
+#   2. pip install -r requirements.txt
+#   3. setar BRAPI_TOKEN no env:
+#      Linux/Mac: export BRAPI_TOKEN=...
+#      Windows: set BRAPI_TOKEN=...
+#   4. gerar dados:
+#      PYTHONPATH=. python -m src.chain_ingest
+#      PYTHONPATH=. python -m src.mispricing_scan
+#   5. abrir dashboard:
+#      PYTHONPATH=. streamlit run dashboard/app.py
+#      → http://localhost:8501
+
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+streamlit>=1.30
+plotly>=5.18
+streamlit-autorefresh>=1.0
