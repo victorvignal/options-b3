@@ -15,6 +15,7 @@ Mostra:
     - Histograma de edge distribution
 """
 from __future__ import annotations
+import os
 from pathlib import Path
 
 import numpy as np
@@ -96,12 +97,14 @@ def main():
     # Botão de refresh manual
     if st.button("🔄 atualizar agora (puxa brapi)"):
         with st.spinner("puxando chain + recalculando SVI..."):
-            import subprocess, os
-            token = os.environ.get("BRAPI_TOKEN", "")
+            import subprocess, sys
+            # usar sys.executable garante o mesmo Python que tem scipy/pandas
+            # (PATH pode resolver pra outro python sem deps)
+            python = sys.executable
             env = os.environ.copy()
-            env["PYTHONPATH"] = "."
-            r1 = subprocess.run(["python", "-m", "src.chain_ingest"], capture_output=True, env=env)
-            r2 = subprocess.run(["python", "-m", "src.mispricing_scan"], capture_output=True, env=env)
+            env["PYTHONPATH"] = str(ROOT)
+            r1 = subprocess.run([python, "-m", "src.chain_ingest"], capture_output=True, env=env)
+            r2 = subprocess.run([python, "-m", "src.mispricing_scan"], capture_output=True, env=env)
             if r1.returncode == 0 and r2.returncode == 0:
                 st.success("atualizado ✓")
                 st.cache_data.clear()
@@ -211,10 +214,13 @@ def render_scan_tab(df: pd.DataFrame):
 
     # SVI fit por chain
     st.subheader("IV empírica vs IV SVI por chain")
+    # construir lista de pares (expiration, underlying) — soma de arrays unique()
+    # só funciona se tiver o mesmo número de elementos; usar pares é mais robusto
+    pairs = sorted(set(zip(df["expiration"].unique(), df["underlying"].unique())))
+    chain_choices = [f"{exp}/{und}" for exp, und in pairs]
     chain_choice = st.selectbox(
         "Chain",
-        options=sorted(df["expiration"].unique() + "/" + df["underlying"].unique())
-        if not df.empty else [],
+        options=chain_choices,
     )
     if chain_choice:
         parts = chain_choice.split("/")
@@ -370,47 +376,6 @@ def render_backtest_tab():
         "Demora ~30-60s pros 30 pregões."
     )
 
-
-def main():
-    st.set_page_config(
-        page_title="Options B3 — Pricer",
-        layout="wide",
-        page_icon="📊",
-    )
-
-    # Auto-refresh a cada 15s — reexecuta o script todo (incluindo load_all_scan)
-    st_autorefresh(interval=15000, key="autorefresh")
-
-    # Header com timestamp de última atualização
-    cols = st.columns([3, 1])
-    with cols[0]:
-        st.title("📊 Options B3 — pricer & mispricing scan")
-    with cols[1]:
-        st.caption(f"última atualização CSVs: {data_mtime()}")
-
-    # Botão de refresh manual
-    if st.button("🔄 atualizar agora (puxa brapi)"):
-        with st.spinner("puxando chain + recalculando SVI..."):
-            import subprocess, os
-            token = os.environ.get("BRAPI_TOKEN", "")
-            env = os.environ.copy()
-            env["PYTHONPATH"] = "."
-            r1 = subprocess.run(["python", "-m", "src.chain_ingest"], capture_output=True, env=env)
-            r2 = subprocess.run(["python", "-m", "src.mispricing_scan"], capture_output=True, env=env)
-            if r1.returncode == 0 and r2.returncode == 0:
-                st.success("atualizado ✓")
-                st.cache_data.clear()
-                st.rerun()
-            else:
-                st.error(f"erro: chain={r1.returncode} scan={r2.returncode}")
-                st.code(r1.stderr.decode()[-500:] + r2.stderr.decode()[-500:])
-
-    # Footer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**Como rodar:**")
-    st.sidebar.code("python -m src.chain_ingest")
-    st.sidebar.code("python -m src.mispricing_scan")
-    st.sidebar.code("streamlit run dashboard/app.py")
 
 
 if __name__ == "__main__":

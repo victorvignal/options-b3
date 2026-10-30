@@ -159,15 +159,56 @@ def filter_european(series: list[dict]) -> list[dict]:
     return [s for s in series if s.get("optionStyle") == "european"]
 
 
-def filter_liquid(series: list[dict]) -> list[dict]:
+def filter_call_liquid(series: list[dict], spot: float,
+                       moneyness_min: float = 0.95,
+                       moneyness_max: float = 1.20,
+                       oi_min: int = 100) -> list[dict]:
     """
-    Filtra séries com liquidez mínima.
+    Filtra séries pra estratégia call-only.
 
     Critérios:
+        - optionStyle == european
+        - side == call
         - bid > 0 AND ask > 0 (existem os dois lados)
         - spread < 50% do mid (mercado não está em stress)
-        - moneyness entre 0.85 e 1.15 (descarta OTM profundo)
-        - volume > 0 OR openInterest > 50 (alguma atividade)
+        - moneyness entre 0.95 e 1.20 (ATM até OTM 20% acima — onde mora o edge)
+        - volume > 0 OR openInterest >= oi_min (liquidez mínima)
+    """
+    out = []
+    for s in series:
+        if s.get("optionStyle") != "european":
+            continue
+        if s.get("side") != "call":
+            continue
+        bid = s.get("bid") or 0
+        ask = s.get("ask") or 0
+        if bid <= 0 or ask <= 0:
+            continue
+        mid = (bid + ask) / 2
+        if mid <= 0:
+            continue
+        spread_pct = (ask - bid) / mid
+        if spread_pct > 0.50:
+            continue
+        strike = s.get("strike") or 0
+        if strike <= 0 or spot <= 0:
+            continue
+        moneyness = strike / spot
+        if moneyness < moneyness_min or moneyness > moneyness_max:
+            continue
+        volume = s.get("volume") or 0
+        oi = s.get("openInterest") or 0
+        if volume == 0 and oi < oi_min:
+            continue
+        out.append({**s, "_spread_pct": spread_pct})
+    return out
+
+
+# mantido pra compat — usado pelo backtest que precisa de tudo (sem filtro de side)
+def filter_liquid(series: list[dict]) -> list[dict]:
+    """
+    Filtro genérico (sem moneyness nem side) — usado pelo backtest que
+    precisa de PUTS pra validação. Pra call only, usa filter_call_liquid.
     """
     out = []
     for s in series:
@@ -181,9 +222,7 @@ def filter_liquid(series: list[dict]) -> list[dict]:
         spread_pct = (ask - bid) / mid
         if spread_pct > 0.50:
             continue
-        # moneyness: requer strike do payload; se não tiver, usa heurística via série
         strike = s.get("strike") or 0
-        # sem spot aqui, moneyness check fica no caller (precisa spot)
         volume = s.get("volume") or 0
         oi = s.get("openInterest") or 0
         if volume == 0 and oi < 50:
@@ -242,12 +281,18 @@ def build_row(s: dict, underlying: str, spot: float, r: float, q: float, t: floa
 
 def ingest_underlying(underlying: str, token: str,
                       expirations: list[str] | None = None,
-                      max_expirations: int = 4) -> list[OptionRow]:
+                      max_expirations: int = 4,
+                      call_only: bool = True,
+                      moneyness_min: float = 0.95,
+                      moneyness_max: float = 1.20) -> list[OptionRow]:
     """
     Ingest completo pra 1 underlying.
 
     Pega spot+divYield, curva risk-free, vencimentos mais próximos,
-    chain de cada um, filtra europeias+líquidas, retorna OptionRows.
+    chain de cada um, filtra (european + call only + líquido), retorna OptionRows.
+
+    call_only=True: filtra só calls europeias com moneyness 0.95-1.20
+    call_only=False: filtra calls + puts pra validação
     """
     u = get_underlying(underlying, token)
     spot, q = u["spot"], u["dividend_yield"]
@@ -263,17 +308,22 @@ def ingest_underlying(underlying: str, token: str,
         except Exception as e:
             print(f"  ✗ {exp}: {e}")
             continue
-        series = filter_european(series)
-        series = filter_liquid(series)
+        if call_only:
+            series = filter_call_liquid(series, spot,
+                                        moneyness_min=moneyness_min,
+                                        moneyness_max=moneyness_max)
+        else:
+            series = filter_european(series)
+            series = filter_liquid(series)
         if not series:
-            print(f"  · {exp}: 0 séries europeias líquidas")
+            print(f"  · {exp}: 0 séries")
             continue
         exp_dt = datetime.fromisoformat(exp).date()
         t = max((exp_dt - date.today()).days / 365.0, 1 / 365.0)
         r = interpolate_risk_free(curve, t)
         for s in series:
             all_rows.append(build_row(s, underlying, spot, r, q, t))
-        print(f"  ✓ {exp}: {len(series)} séries europeias líquidas (T={t:.3f}y, r={r:.2%})")
+        print(f"  ✓ {exp}: {len(series)} séries (T={t:.3f}y, r={r:.2%})")
 
     return all_rows
 
